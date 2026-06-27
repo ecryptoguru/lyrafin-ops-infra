@@ -71,7 +71,9 @@ Use **Doppler** as the primary secrets vault across all environments (local, Con
 Doppler is the preferred secrets manager for this stack. Its developer/free tier is expected to be enough for initial local and solo operation, but plan limits and pricing must be checked before production rollout. Doppler injects secrets directly to Docker Compose at runtime via the Doppler CLI:
 
 ```bash
-doppler run -- docker compose up -d
+doppler run -- ./scripts/preflight-prod.sh
+doppler run -- docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  --profile all --profile production up -d
 ```
 
 Project structure in Doppler:
@@ -110,6 +112,7 @@ Local project contents:
 lyrafin-ops-infra
 ├── docker-compose.yml
 ├── docker-compose.override.yml
+├── docker-compose.prod.yml
 ├── .env.example
 ├── caddy/
 │   └── Caddyfile
@@ -123,6 +126,7 @@ lyrafin-ops-infra
 │   ├── app/
 │   └── tests/
 ├── scripts/
+│   ├── preflight-prod.sh
 │   ├── backup-postgres.sh
 │   ├── restore-postgres.sh
 │   ├── smoke-local.sh
@@ -177,7 +181,7 @@ Local URLs:
 ```txt
 http://localhost:9001 -> listmonk
 http://localhost:8025 -> Mailpit
-http://localhost:5000 -> Postiz
+http://localhost:5050 -> Postiz
 http://localhost:9100 -> MarkItDown API
 ```
 
@@ -190,7 +194,7 @@ LISTMONK_API_TOKEN=local-dev-token
 LISTMONK_BLOG_LIST_ID=1
 LISTMONK_TRANSACTIONAL_TEMPLATE_ID=1
 
-POSTIZ_BASE_URL=http://localhost:5000
+POSTIZ_BASE_URL=http://localhost:5050
 POSTIZ_API_TOKEN=local-dev-token
 
 MARKITDOWN_BASE_URL=http://localhost:9100
@@ -308,10 +312,17 @@ Document the deployment runbook in `runbooks/deploy.md`. For v1:
 ```bash
 # On Contabo VPS — update services to latest versions
 git pull
-doppler run -- docker compose pull
-doppler run -- docker compose up -d
-docker compose ps   # verify all services healthy
+doppler run -- docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  --profile all --profile production pull
+doppler run -- ./scripts/preflight-prod.sh
+doppler run -- docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  --profile all --profile production up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  --profile all --profile production ps
 ```
+
+Always use `docker-compose.prod.yml` in production so local overrides such as
+Mailpit SMTP and dev ports are not auto-merged into the Contabo deployment.
 
 No automated CI/CD is required for v1. Add GitHub Actions + SSH deployment in a later iteration when deployment cadence increases.
 
