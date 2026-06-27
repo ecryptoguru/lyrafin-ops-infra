@@ -7,15 +7,30 @@
 | listmonk PostgreSQL | Daily | `pg_dump` via script | Local + AWS S3 |
 | Postiz PostgreSQL | Daily | `pg_dump` via script | Local + AWS S3 |
 | Temporal PostgreSQL | Daily | `pg_dump` via script | Local + AWS S3 |
-| Postiz uploads | Weekly | `tar` of Docker volume | Local + AWS S3 |
-| listmonk uploads | Weekly | `tar` of Docker volume | Local + AWS S3 |
+| Postiz uploads | Weekly | `tar` of Docker volume via script | Local + AWS S3 |
+| listmonk uploads | Weekly | `tar` of Docker volume via script | Local + AWS S3 |
 | Full VPS snapshot | Weekly | Contabo snapshot | Contabo |
+
+> **Note on VPS snapshots:** if Contabo Auto Backup is not enabled, there is no
+> VPS-level safety net. In that case the DB + uploads backups below are the only
+> recovery source — make sure the cron runs, S3 syncs succeed, and a restore drill
+> has passed *before* relying on them.
 
 ## Daily Backup (Automated via Cron)
 
 ```bash
 # Add to crontab (as deploy user)
 0 3 * * * cd /home/deploy/lyrafin-ops-infra && ./scripts/backup-postgres.sh >> /var/log/lyra-ops-backup.log 2>&1
+```
+
+## Weekly Volume Backup (Automated via Cron)
+
+Docker volumes (Postiz + listmonk uploads) are not covered by `pg_dump`. Back them
+up weekly with `scripts/backup-uploads.sh`:
+
+```bash
+# Weekly, Sundays at 4am
+0 4 * * 0 cd /home/deploy/lyrafin-ops-infra && ./scripts/backup-uploads.sh >> /var/log/lyra-ops-backup-uploads.log 2>&1
 ```
 
 ## Manual Backup
@@ -26,13 +41,8 @@ cd /home/deploy/lyrafin-ops-infra
 # Backup all databases
 ./scripts/backup-postgres.sh
 
-# Backup uploads (Postiz)
-docker run --rm -v postiz-uploads:/data -v $(pwd)/backups:/backup alpine \
-  tar czf /backup/postiz-uploads_$(date +%Y%m%d).tar.gz -C /data .
-
-# Backup uploads (listmonk)
-docker run --rm -v listmonk-uploads:/data -v $(pwd)/backups:/backup alpine \
-  tar czf /backup/listmonk-uploads_$(date +%Y%m%d).tar.gz -C /data .
+# Backup uploads volumes (Postiz + listmonk)
+./scripts/backup-uploads.sh
 ```
 
 ## Upload to AWS S3
@@ -74,7 +84,9 @@ docker run --rm -v listmonk-uploads:/data -v $(pwd)/backups:/backup alpine \
 
 ## Restore Drill
 
-Run restore drills into a clean Docker environment before relying on backups:
+> **Run a restore drill into a clean environment *before* going live**, not just
+> "when you have time." If VPS snapshots are not enabled, this drill is your proof
+> that backups actually work — do not skip it.
 
 ```bash
 # 1. Stop all services and remove volumes
@@ -92,8 +104,11 @@ docker compose --profile all ps
 ./scripts/restore-postgres.sh temporal ./backups/temporal_<timestamp>.sql.gz
 
 # 5. Restore uploads
+./scripts/restore-postgres.sh # (no-op placeholder; use tar commands below)
 docker run --rm -v postiz-uploads:/data -v $(pwd)/backups:/backup alpine \
   tar xzf /backup/postiz-uploads_<date>.tar.gz -C /data
+docker run --rm -v listmonk-uploads:/data -v $(pwd)/backups:/backup alpine \
+  tar xzf /backup/listmonk-uploads_<date>.tar.gz -C /data
 
 # 6. Verify data integrity
 # - Login to listmonk, check subscriber count
@@ -108,6 +123,7 @@ docker run --rm -v postiz-uploads:/data -v $(pwd)/backups:/backup alpine \
 
 - **Estimated RTO:** 2 hours from backup
 - This assumes: S3 backup available, VPS accessible, Docker installed
+- Without VPS snapshots, RTO may be longer (full VPS rebuild + Docker install + restore)
 - Re-evaluate at 500+ users or first B2B SLA commitment
 
 ## Secrets Recovery
