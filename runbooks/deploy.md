@@ -69,7 +69,7 @@ curl https://convert.lyrafinai.com/health
 ### Step 8: Run doctor check
 
 ```bash
-./scripts/doctor.sh
+./scripts/doctor.sh production
 ```
 
 ### Step 9: Configure listmonk

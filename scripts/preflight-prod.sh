@@ -81,6 +81,10 @@ if grep -Eq 'LISTMONK_smtp__host: "?mailpit"?' <<<"$rendered_config"; then
     fail "rendered production compose config points listmonk SMTP at Mailpit"
 fi
 
+if grep -Eq 'LISTMONK_smtp__auth_protocol: "?cram"?' <<<"$rendered_config"; then
+    fail "rendered production compose config uses SES-incompatible SMTP auth_protocol=cram"
+fi
+
 published_ports="$(awk '/published:/{gsub(/"/, "", $2); print $2}' <<<"$rendered_config" | sort -u)"
 while IFS= read -r port; do
     [ -z "$port" ] && continue

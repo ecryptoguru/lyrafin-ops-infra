@@ -20,13 +20,12 @@ Contabo VPS
 ├── PostgreSQL (Temporal DB — separate instance)
 ├── Redis
 ├── Temporal + Elasticsearch (for Temporal visibility)
+├── MarkItDown API
 ├── Caddy
 └── Backups and monitoring
 
-Azure
-└── MarkItDown API (Azure Container Apps)
-    ├── Fast conversion mode
-    └── OCR/table mode with Azure Document Intelligence
+Azure (optional backend service)
+└── Azure Document Intelligence for OCR/table-heavy conversion
 
 Lyrafin app
 ├── EmailService    -> listmonk / Amazon SES
@@ -66,7 +65,7 @@ The main app should own integration contracts such as `sendEmail`, `schedulePost
 
 ## Secrets Management
 
-Use **Doppler** as the primary secrets vault across all environments (local, Contabo, Azure, AWS).
+Use **Doppler** as the primary secrets vault across all environments (local, Contabo, AWS, and optional Azure Document Intelligence).
 
 Doppler is the preferred secrets manager for this stack. Its developer/free tier is expected to be enough for initial local and solo operation, but plan limits and pricing must be checked before production rollout. Doppler injects secrets directly to Docker Compose at runtime via the Doppler CLI:
 
@@ -82,7 +81,7 @@ Project structure in Doppler:
 lyrafin-ops
 ├── dev        (local development secrets)
 ├── staging    (if applicable)
-└── production (Contabo + Azure production secrets)
+└── production (Contabo production secrets, plus optional Azure Document Intelligence keys)
 
 lyrafin-app
 ├── dev
@@ -648,7 +647,7 @@ Reward examples:
 
 Build a separate service named `lyrafin-markitdown-api`.
 
-Deploy it on Azure Container Apps as a private backend service for Lyrafin. It should not be marketed as a public converter in v1.
+Deploy it on the Contabo VPS behind Caddy at `convert.lyrafinai.com`. It should not be marketed as a public converter in v1.
 
 Endpoints:
 
@@ -691,15 +690,14 @@ Security requirements:
 - Block private IP URL fetching.
 - Optional malware scanning later.
 - Per-user and per-environment rate limits.
-- Budget alerts for Azure Container Apps and Document Intelligence usage.
+- Budget alerts for Azure Document Intelligence usage if OCR/table mode is enabled.
 
 Recommended launch posture:
 
-- Azure Container Apps Consumption plan.
-- Minimum replicas: `1` (not 0 — cold starts of 5–15 seconds are unacceptable for user-facing portfolio import flows).
-- Maximum replicas: `3`.
-- External ingress only if protected by API auth and network controls.
-- Store secrets in Container Apps secrets or Azure Key Vault. Document recovery path in Doppler.
+- Run the FastAPI wrapper as `markitdown-api` in Docker Compose on Contabo.
+- Expose it only through Caddy on `convert.lyrafinai.com`.
+- Require `X-API-Key` for conversion endpoints.
+- Store optional Azure Document Intelligence keys in Doppler if OCR/table mode is enabled.
 - Use production Document Intelligence tier for real workloads; do not depend on free-tier capacity for product behavior.
 
 ---
@@ -790,7 +788,7 @@ The best product strategy is not to expose these tools as generic utilities. Use
 17. Deploy Postiz on Contabo. Use local volume storage for v1 (`STORAGE_PROVIDER=local`). Verify uploads persist after container restart before connecting any social providers.
 18. Configure first-priority social providers in Postiz once LinkedIn/Meta apps are approved. X/Twitter is handled by Hyperagent's native free X/Twitter connector — do not configure in Postiz.
 19. **Register Postiz MCP server in Hyperagent.** URL: `https://social.lyrafinai.com/mcp` with Bearer token. Test: schedule a draft LinkedIn post via Hyperagent conversation. Confirm it appears in the Postiz calendar.
-20. Deploy MarkItDown to Azure Container Apps. Set `minReplicas: 1`. Store secrets in Container Apps secrets or Azure Key Vault.
+20. Deploy MarkItDown on Contabo through `docker-compose.yml` + `docker-compose.prod.yml`. If OCR/table mode is enabled, store Azure Document Intelligence secrets in Doppler.
 21. Integrate `DocumentService` into upload and portfolio import.
 22. Add `SocialService` and share/reward integrations. Implement `share_analysis` XP daily cap through the durable share/XP data model; add a new daily-activity model only if the existing schema is insufficient.
 23. Add Uptime Robot monitoring for all three subdomains and the main Lyrafin app.
@@ -877,7 +875,7 @@ MarkItDown:
 - Private-IP/URL SSRF path is blocked.
 - Timeouts are enforced.
 - Logs do not include document content.
-- `minReplicas` is set to 1 in Azure Container Apps configuration.
+- Optional Azure Document Intelligence credentials are present only when OCR/table mode is enabled.
 
 Lyrafin app:
 
@@ -927,7 +925,7 @@ This is the preferred setup:
 - Separate ops repo for deployment and runbooks.
 - Canonical `lyrafinai.com` subdomains.
 - Contabo for persistent listmonk/Postiz stack.
-- Azure Container Apps for stateless MarkItDown conversion (minReplicas: 1).
+- Contabo for private MarkItDown conversion, with optional Azure Document Intelligence OCR backend.
 - SES as the sending layer under listmonk for all email — transactional and campaigns. Brevo deprecated fully at Step 16.
 - Doppler for secrets management across all environments.
 - Provider-neutral app services in `multiasset-ai`.

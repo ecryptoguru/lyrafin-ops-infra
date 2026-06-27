@@ -244,7 +244,7 @@ doppler run -- docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 
 | Service | Change | Reason |
 |---|---|---|
-| listmonk | SMTP → SES (`SES_SMTP_HOST`, port 587, STARTTLS, CRAM auth) | Production email delivery |
+| listmonk | SMTP → SES (`SES_SMTP_HOST`, port 587, STARTTLS, login auth) | Production email delivery |
 | listmonk | Requires admin + DB secrets | Prevents inherited local placeholders |
 | listmonk | `ports: !reset []` | Not publicly accessible; Caddy proxies |
 | listmonk-db | `ports: !reset []` | Not publicly accessible |
@@ -680,12 +680,14 @@ Restores a single database from a backup file.
 
 Daily health check script (add to cron: `0 8 * * *`).
 
+Usage: `./scripts/doctor.sh [local|production]`. Local mode skips the
+production-only Caddy container; production mode requires it and checks public
+health endpoints when it is running.
+
 **Checks:**
 
 1. **Disk usage** — warns at 70%, critical at 85%
-2. **Container status** — checks the full local/production superset of 12 expected containers:
-   `listmonk_app`, `listmonk_db`, `listmonk_mailpit`, `postiz`, `postiz-postgres`, `postiz-redis`, `temporal`, `temporal-postgresql`, `temporal-elasticsearch`, `temporal-ui`, `markitdown_api`, `caddy`
-   - In local-only runs, `caddy` is expected to warn unless the `production` profile is also running.
+2. **Container status** — local mode checks 11 local containers; production mode also requires `caddy`.
 3. **Docker log sizes** — inspects `LogPath` for each container
 4. **Health endpoints** (if Caddy is running) — checks production URLs, accepts 200/302/307
 
@@ -834,6 +836,7 @@ before `docker compose ... up -d` in production and verifies:
 - Secret values are not known placeholders and meet minimum lengths.
 - `POSTIZ_DISABLE_REGISTRATION` is `true`; `docker-compose.prod.yml` also hardcodes `DISABLE_REGISTRATION: "true"`.
 - Rendered production compose config does not contain `change-me`, `local-dev-token`, or Mailpit SMTP.
+- Rendered production compose config does not use SES-incompatible `auth_protocol=cram`.
 - Rendered production compose config publishes only ports `80` and `443`.
 
 ---

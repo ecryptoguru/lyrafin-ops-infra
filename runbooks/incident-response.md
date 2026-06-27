@@ -18,7 +18,7 @@
 
 2. **Run doctor check:**
    ```bash
-   ./scripts/doctor.sh
+   ./scripts/doctor.sh production
    ```
 
 3. **Check recent logs:**

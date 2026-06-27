@@ -18,7 +18,7 @@ services:
       LISTMONK_db__password: ${LISTMONK_DB_PASSWORD:?LISTMONK_DB_PASSWORD is required}
       LISTMONK_smtp__host: ${SES_SMTP_HOST:?SES_SMTP_HOST is required}
       LISTMONK_smtp__port: ${SES_SMTP_PORT:-587}
-      LISTMONK_smtp__auth_protocol: cram
+      LISTMONK_smtp__auth_protocol: login
       LISTMONK_smtp__username: ${SES_SMTP_USER:?SES_SMTP_USER is required}
       LISTMONK_smtp__password: ${SES_SMTP_PASSWORD:?SES_SMTP_PASSWORD is required}
       LISTMONK_smtp__tls_type: STARTTLS

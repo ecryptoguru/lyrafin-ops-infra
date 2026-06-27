@@ -93,6 +93,6 @@ convert.lyrafinai.com {
 		}
 	}
 
-	# Rate limiting (basic — use Caddy's rate_limit module or a sidecar for advanced)
-	# The MarkItDown API also enforces its own rate limits internally
+	# Abuse limits: MarkItDown enforces file size and conversion timeout.
+	# Add a Caddy rate_limit module or sidecar later if public traffic needs it.
 }

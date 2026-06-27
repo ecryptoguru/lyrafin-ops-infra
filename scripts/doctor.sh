@@ -2,14 +2,16 @@
 set -euo pipefail
 
 # Doctor — daily health check for the Lyrafin Ops stack
-# Usage: ./scripts/doctor.sh
+# Usage: ./scripts/doctor.sh [local|production]
 # Add to cron: 0 8 * * * /path/to/lyrafin-ops-infra/scripts/doctor.sh
 
 DISK_THRESHOLD_WARN=70
 DISK_THRESHOLD_CRIT=85
+MODE="${1:-local}"
 
 echo "=== Lyrafin Ops Doctor ==="
 echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "Mode: $MODE"
 echo ""
 
 # Check disk usage
@@ -37,8 +39,11 @@ EXPECTED_CONTAINERS=(
     "temporal-elasticsearch"
     "temporal-ui"
     "markitdown_api"
-    "caddy"
 )
+
+if [ "$MODE" = "production" ]; then
+    EXPECTED_CONTAINERS+=("caddy")
+fi
 
 for container in "${EXPECTED_CONTAINERS[@]}"; do
     if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
@@ -47,6 +52,9 @@ for container in "${EXPECTED_CONTAINERS[@]}"; do
         echo "  [WARN] $container not running"
     fi
 done
+if [ "$MODE" != "production" ]; then
+    echo "  [SKIP] caddy production profile not expected in local mode"
+fi
 echo ""
 
 # Check Docker log disk usage
