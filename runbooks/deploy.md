@@ -4,6 +4,7 @@
 
 - [ ] Local rehearsal passed (all smoke tests green)
 - [ ] Restore drill completed successfully
+- [ ] Backup automation verified: `backup-postgres.sh` cron (daily) + `backup-uploads.sh` cron (weekly) + S3 sync working
 - [ ] AWS SES production access confirmed (for email cutover)
 - [ ] Cloudflare DNS configured for three subdomains
 - [ ] LinkedIn developer app registered (for Postiz OAuth)
@@ -96,6 +97,17 @@ Configure Uptime Robot monitors:
 - Main Lyrafin app URL
 
 Set alert email to `ankit@lyrafinai.com`.
+
+### Step 12: Enable backup cron jobs
+
+```bash
+crontab -e
+# Add:
+0 3 * * * cd /home/deploy/lyrafin-ops-infra && ./scripts/backup-postgres.sh >> /var/log/lyra-ops-backup.log 2>&1
+0 4 * * 0 cd /home/deploy/lyrafin-ops-infra && ./scripts/backup-uploads.sh >> /var/log/lyra-ops-backup-uploads.log 2>&1
+```
+
+Verify the S3/R2 sync runs after the first scheduled backup (check logs + S3 bucket contents the next morning).
 
 ## Updating Services
 
