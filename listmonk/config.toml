@@ -1,0 +1,34 @@
+# listmonk config.toml — reference for non-Docker deployments
+# In Docker, all settings are passed as LISTMONK_* env vars.
+# This file exists for documentation and standalone reference.
+
+[app]
+address = "0.0.0.0:9000"
+admin_username = "admin"
+admin_password = "change-me"
+
+[db]
+host = "listmonk-db"
+port = 5432
+user = "listmonk"
+password = "change-me"
+database = "listmonk"
+ssl_mode = "disable"
+max_open = 25
+max_idle = 25
+max_lifetime = "300s"
+
+[smtp]
+# Local development (Mailpit)
+host = "mailpit"
+port = 1025
+auth_protocol = "none"
+tls_type = "none"
+hello_host = "localhost"
+
+# Production (Amazon SES) — override via env vars in production
+# host = "email-smtp.us-east-1.amazonaws.com"
+# port = 587
+# auth_protocol = "login"
+# tls_type = "starttls"
+# hello_host = "lyrafinai.com"

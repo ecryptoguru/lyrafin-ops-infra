@@ -1,0 +1,98 @@
+# Caddyfile — Lyrafin Ops Reverse Proxy
+# Production configuration for Contabo VPS.
+# Caddy handles automatic HTTPS via Let's Encrypt.
+#
+# Local development does not use Caddy — services are accessed directly
+# via localhost ports defined in docker-compose.yml.
+
+# ============================================================
+# newsletter.lyrafinai.com → listmonk
+# ============================================================
+newsletter.lyrafinai.com {
+	# Health endpoint for Uptime Robot monitoring
+	@health path /health
+	respond @health 200
+
+	reverse_proxy listmonk:9000
+
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+
+	# Compression
+	encode gzip zstd
+
+	# Access logs
+	log {
+		output file /data/logs/newsletter.access.log {
+			roll_size 100MB
+			roll_keep 7
+		}
+	}
+}
+
+# ============================================================
+# social.lyrafinai.com → Postiz
+# ============================================================
+social.lyrafinai.com {
+	# Health endpoint for Uptime Robot monitoring
+	@health path /health
+	respond @health 200
+
+	reverse_proxy postiz:5000
+
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+
+	# Compression
+	encode gzip zstd
+
+	# Access logs — avoid logging API keys in query params
+	log {
+		output file /data/logs/social.access.log {
+			roll_size 100MB
+			roll_keep 7
+		}
+	}
+
+	# MCP endpoint — Bearer auth is handled by Postiz itself
+	# No special Caddy config needed; Postiz validates the Bearer token
+}
+
+# ============================================================
+# convert.lyrafinai.com → MarkItDown API
+# ============================================================
+convert.lyrafinai.com {
+	reverse_proxy markitdown-api:9100
+
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+
+	# Compression
+	encode gzip zstd
+
+	# Access logs
+	log {
+		output file /data/logs/convert.access.log {
+			roll_size 100MB
+			roll_keep 7
+		}
+	}
+
+	# Rate limiting (basic — use Caddy's rate_limit module or a sidecar for advanced)
+	# The MarkItDown API also enforces its own rate limits internally
+}

@@ -1,0 +1,6 @@
+# Temporal dynamic config for development with PostgreSQL
+# This file is mounted into the Temporal container at:
+# /etc/temporal/config/dynamicconfig/development-sql.yaml
+
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true

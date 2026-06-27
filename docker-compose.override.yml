@@ -1,0 +1,18 @@
+# Local development overrides
+# This file is automatically merged with docker-compose.yml by Docker Compose.
+# Use it for local-only changes. Do not commit real secrets.
+
+services:
+  listmonk:
+    environment:
+      # Use Mailpit for local SMTP testing
+      LISTMONK_smtp__host: mailpit
+      LISTMONK_smtp__port: "1025"
+      LISTMONK_smtp__auth_protocol: none
+      LISTMONK_smtp__tls_type: none
+      LISTMONK_smtp__hello_host: localhost
+    depends_on:
+      listmonk-db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started

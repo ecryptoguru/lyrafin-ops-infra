@@ -1,0 +1,81 @@
+# Production overrides for Contabo VPS deployment.
+# Usage:
+#   doppler run -- ./scripts/preflight-prod.sh
+#   doppler run -- docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --profile all --profile production up -d
+#
+# This file explicitly replaces docker-compose.override.yml (which is for local dev only).
+# By using -f, Docker Compose does NOT auto-merge docker-compose.override.yml.
+
+services:
+  listmonk:
+    # Bind to localhost only — Caddy is the public-facing reverse proxy
+    ports: !reset []
+    environment:
+      # SES SMTP for production email delivery
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-admin}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:?LISTMONK_ADMIN_PASSWORD is required}
+      LISTMONK_db__password: ${LISTMONK_DB_PASSWORD:?LISTMONK_DB_PASSWORD is required}
+      LISTMONK_smtp__host: ${SES_SMTP_HOST:?SES_SMTP_HOST is required}
+      LISTMONK_smtp__port: ${SES_SMTP_PORT:-587}
+      LISTMONK_smtp__auth_protocol: cram
+      LISTMONK_smtp__username: ${SES_SMTP_USER:?SES_SMTP_USER is required}
+      LISTMONK_smtp__password: ${SES_SMTP_PASSWORD:?SES_SMTP_PASSWORD is required}
+      LISTMONK_smtp__tls_type: STARTTLS
+      LISTMONK_smtp__hello_host: ${NEWSLETTER_DOMAIN:-newsletter.lyrafinai.com}
+
+  listmonk-db:
+    ports: !reset []
+    environment:
+      POSTGRES_USER: ${LISTMONK_DB_USER:-listmonk}
+      POSTGRES_PASSWORD: ${LISTMONK_DB_PASSWORD:?LISTMONK_DB_PASSWORD is required}
+      POSTGRES_DB: ${LISTMONK_DB_NAME:-listmonk}
+
+  mailpit:
+    # Mailpit is local-only; reset ports so it's not publicly accessible in production
+    ports: !reset []
+
+  postiz:
+    # Bind to localhost only — Caddy handles public access
+    ports: !reset []
+    environment:
+      MAIN_URL: https://${SOCIAL_DOMAIN:-social.lyrafinai.com}
+      FRONTEND_URL: https://${SOCIAL_DOMAIN:-social.lyrafinai.com}
+      NEXT_PUBLIC_BACKEND_URL: https://${SOCIAL_DOMAIN:-social.lyrafinai.com}/api
+      JWT_SECRET: ${POSTIZ_JWT_SECRET:?POSTIZ_JWT_SECRET is required}
+      DATABASE_URL: postgresql://${POSTIZ_DB_USER:-postiz-user}:${POSTIZ_DB_PASSWORD:?POSTIZ_DB_PASSWORD is required}@postiz-postgres:5432/${POSTIZ_DB_NAME:-postiz-db-local}
+      DISABLE_REGISTRATION: "true"
+
+  postiz-postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTIZ_DB_PASSWORD:?POSTIZ_DB_PASSWORD is required}
+      POSTGRES_USER: ${POSTIZ_DB_USER:-postiz-user}
+      POSTGRES_DB: ${POSTIZ_DB_NAME:-postiz-db-local}
+
+  markitdown-api:
+    # Bind to localhost only — Caddy handles public access
+    ports: !reset []
+    environment:
+      MARKITDOWN_API_KEY: ${MARKITDOWN_API_KEY:?MARKITDOWN_API_KEY is required}
+
+  temporal:
+    ports: !reset []
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:?TEMPORAL_DB_PASSWORD is required}
+      - POSTGRES_SEEDS=temporal-postgresql
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+      - ENABLE_ES=true
+      - ES_SEEDS=temporal-elasticsearch
+      - ES_VERSION=v7
+      - TEMPORAL_NAMESPACE=default
+
+  temporal-postgresql:
+    environment:
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD:?TEMPORAL_DB_PASSWORD is required}
+      POSTGRES_USER: ${TEMPORAL_DB_USER:-temporal}
+
+  temporal-ui:
+    ports: !reset []

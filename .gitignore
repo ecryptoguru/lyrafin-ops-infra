@@ -1,0 +1,37 @@
+# Environment files
+.env
+.env.local
+.env.production
+
+# Doppler
+.doppler/
+
+# Docker volumes (if stored locally)
+volumes/
+
+# Uploads
+uploads/
+
+# Backups
+backups/
+*.sql
+*.sql.gz
+*.dump
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+preview.log
+
+# Caddy data (if local)
+caddy/data/
+caddy/config/

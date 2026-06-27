@@ -1,0 +1,376 @@
+# Lyrafin Ops Infrastructure — Docker Compose
+# Profiles: email, social, convert, all
+# Usage:
+#   docker compose --profile email up -d
+#   docker compose --profile social up -d
+#   docker compose --profile convert up -d
+#   docker compose --profile all up -d
+#
+# Secrets are injected via Doppler CLI:
+#   doppler run -- docker compose --profile all up -d
+
+x-email-common: &email-common
+  profiles: [email, all]
+
+x-social-common: &social-common
+  profiles: [social, all]
+
+x-convert-common: &convert-common
+  profiles: [convert, all]
+
+services:
+  # ============================================================
+  # EMAIL PROFILE — listmonk + PostgreSQL + Mailpit (local) / SES (prod)
+  # ============================================================
+  listmonk:
+    <<: *email-common
+    image: listmonk/listmonk:latest
+    container_name: listmonk_app
+    restart: unless-stopped
+    ports:
+      - "${LISTMONK_PORT:-9001}:9000"
+    networks:
+      - lyra-net
+    depends_on:
+      listmonk-db:
+        condition: service_healthy
+    command: >
+      sh -c "./listmonk --install --idempotent --yes --config '' &&
+      ./listmonk --upgrade --yes --config '' &&
+      ./listmonk --config ''"
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_db__user: ${LISTMONK_DB_USER:-listmonk}
+      LISTMONK_db__password: ${LISTMONK_DB_PASSWORD:-listmonk}
+      LISTMONK_db__database: ${LISTMONK_DB_NAME:-listmonk}
+      LISTMONK_db__host: listmonk-db
+      LISTMONK_db__port: 5432
+      LISTMONK_db__ssl_mode: disable
+      LISTMONK_db__max_open: 25
+      LISTMONK_db__max_idle: 25
+      LISTMONK_db__max_lifetime: 300s
+      TZ: ${TZ:-Etc/UTC}
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-}
+      # SMTP — overridden to Mailpit in docker-compose.override.yml for local dev.
+      # In production, Doppler injects SES_SMTP_* values via docker-compose.prod.yml.
+      LISTMONK_smtp__host: ${LISTMONK_SMTP_HOST:-}
+      LISTMONK_smtp__port: ${LISTMONK_SMTP_PORT:-}
+      LISTMONK_smtp__auth_protocol: ${LISTMONK_SMTP_AUTH_PROTOCOL:-}
+      LISTMONK_smtp__username: ${LISTMONK_SMTP_USER:-}
+      LISTMONK_smtp__password: ${LISTMONK_SMTP_PASSWORD:-}
+      LISTMONK_smtp__tls_type: ${LISTMONK_SMTP_TLS_TYPE:-}
+      LISTMONK_smtp__hello_host: ${LISTMONK_SMTP_HELLO_HOST:-}
+    volumes:
+      - listmonk-uploads:/listmonk/uploads
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- --spider http://localhost:9000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  listmonk-db:
+    <<: *email-common
+    image: postgres:17-alpine
+    container_name: listmonk_db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - lyra-net
+    environment:
+      POSTGRES_USER: ${LISTMONK_DB_USER:-listmonk}
+      POSTGRES_PASSWORD: ${LISTMONK_DB_PASSWORD:-listmonk}
+      POSTGRES_DB: ${LISTMONK_DB_NAME:-listmonk}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LISTMONK_DB_USER:-listmonk}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    volumes:
+      - listmonk-db-data:/var/lib/postgresql/data
+
+  # Mailpit — local SMTP testing only (not used in production)
+  mailpit:
+    <<: *email-common
+    image: axllent/mailpit:latest
+    container_name: listmonk_mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-8025}:8025"
+    networks:
+      - lyra-net
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+  # ============================================================
+  # SOCIAL PROFILE — Postiz + PostgreSQL + Redis + Temporal stack
+  # ============================================================
+  postiz:
+    <<: *social-common
+    image: ghcr.io/gitroomhq/postiz-app:latest
+    container_name: postiz
+    restart: always
+    ports:
+      - "${POSTIZ_PORT:-5050}:5000"
+    networks:
+      - postiz-network
+      - temporal-network
+    environment:
+      MAIN_URL: ${POSTIZ_MAIN_URL:-http://localhost:5050}
+      FRONTEND_URL: ${POSTIZ_FRONTEND_URL:-http://localhost:5050}
+      NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_NEXT_PUBLIC_BACKEND_URL:-http://localhost:5050/api}
+      JWT_SECRET: ${POSTIZ_JWT_SECRET:-change-me-to-a-long-random-string}
+      DATABASE_URL: postgresql://${POSTIZ_DB_USER:-postiz-user}:${POSTIZ_DB_PASSWORD:-postiz-password}@postiz-postgres:5432/${POSTIZ_DB_NAME:-postiz-db-local}
+      REDIS_URL: redis://postiz-redis:6379
+      BACKEND_INTERNAL_URL: http://localhost:3000
+      TEMPORAL_ADDRESS: temporal:7233
+      IS_GENERAL: "true"
+      DISABLE_REGISTRATION: ${POSTIZ_DISABLE_REGISTRATION:-false}
+      DISALLOW_PLUS: "true"
+      RUN_CRON: "true"
+      STORAGE_PROVIDER: local
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+      OPENAI_API_KEY: ${POSTIZ_OPENAI_API_KEY:-}
+      NEXT_PUBLIC_DISCORD_SUPPORT: ""
+      NEXT_PUBLIC_POLOTNO: ""
+      API_LIMIT: "30"
+      # Social provider credentials (injected via Doppler in production)
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      # X/Twitter intentionally not configured — handled via Hyperagent native connector
+    volumes:
+      - postiz-config:/config/
+      - postiz-uploads:/uploads/
+    healthcheck:
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:5000/',res=>process.exit(res.statusCode<500?0:1));r.on('error',()=>process.exit(1));r.setTimeout(4000,()=>{r.destroy();process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    depends_on:
+      postiz-postgres:
+        condition: service_healthy
+      postiz-redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+
+  postiz-postgres:
+    <<: *social-common
+    image: postgres:17-alpine
+    container_name: postiz-postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTIZ_DB_PASSWORD:-postiz-password}
+      POSTGRES_USER: ${POSTIZ_DB_USER:-postiz-user}
+      POSTGRES_DB: ${POSTIZ_DB_NAME:-postiz-db-local}
+    volumes:
+      - postiz-db-data:/var/lib/postgresql/data
+    networks:
+      - postiz-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTIZ_DB_USER:-postiz-user} -d ${POSTIZ_DB_NAME:-postiz-db-local}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postiz-redis:
+    <<: *social-common
+    image: redis:7.2
+    container_name: postiz-redis
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - postiz-redis-data:/data
+    networks:
+      - postiz-network
+
+  # --- Temporal Stack ---
+  temporal-elasticsearch:
+    <<: *social-common
+    container_name: temporal-elasticsearch
+    image: elasticsearch:7.17.27
+    restart: always
+    environment:
+      - cluster.routing.allocation.disk.threshold_enabled=true
+      - cluster.routing.allocation.disk.watermark.low=512mb
+      - cluster.routing.allocation.disk.watermark.high=256mb
+      - cluster.routing.allocation.disk.watermark.flood_stage=128mb
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+      - xpack.security.enabled=false
+    networks:
+      - temporal-network
+    expose:
+      - "9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS \"http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s\" || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    volumes:
+      - temporal-elasticsearch-data:/usr/share/elasticsearch/data
+
+  temporal-postgresql:
+    <<: *social-common
+    container_name: temporal-postgresql
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD:-temporal}
+      POSTGRES_USER: ${TEMPORAL_DB_USER:-temporal}
+    networks:
+      - temporal-network
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPORAL_DB_USER:-temporal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+
+  temporal:
+    <<: *social-common
+    container_name: temporal
+    restart: always
+    ports:
+      - "127.0.0.1:7233:7233"
+    image: temporalio/auto-setup:1.28.1
+    depends_on:
+      temporal-postgresql:
+        condition: service_healthy
+      temporal-elasticsearch:
+        condition: service_healthy
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal}
+      - POSTGRES_SEEDS=temporal-postgresql
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+      - ENABLE_ES=true
+      - ES_SEEDS=temporal-elasticsearch
+      - ES_VERSION=v7
+      - TEMPORAL_NAMESPACE=default
+    networks:
+      - temporal-network
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - ./postiz/dynamicconfig:/etc/temporal/config/dynamicconfig
+
+  temporal-ui:
+    <<: *social-common
+    container_name: temporal-ui
+    image: temporalio/ui:2.34.0
+    restart: always
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://127.0.0.1:3000
+    networks:
+      - temporal-network
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+  # ============================================================
+  # CONVERT PROFILE — MarkItDown API
+  # ============================================================
+  markitdown-api:
+    <<: *convert-common
+    build:
+      context: ./markitdown-api
+      dockerfile: Dockerfile
+    container_name: markitdown_api
+    restart: unless-stopped
+    ports:
+      - "${MARKITDOWN_PORT:-9100}:9100"
+    networks:
+      - lyra-net
+    environment:
+      MARKITDOWN_API_KEY: ${MARKITDOWN_API_KEY:-local-dev-token}
+      MARKITDOWN_AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${AZURE_DOC_INTEL_ENDPOINT:-}
+      MARKITDOWN_AZURE_DOCUMENT_INTELLIGENCE_KEY: ${AZURE_DOC_INTEL_KEY:-}
+      MARKITDOWN_MAX_FILE_SIZE_MB: ${MARKITDOWN_MAX_FILE_SIZE_MB:-50}
+      MARKITDOWN_CONVERSION_TIMEOUT_SECONDS: ${MARKITDOWN_TIMEOUT_SECONDS:-120}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ============================================================
+  # CADDY — Reverse proxy (production only, via caddy profile)
+  # ============================================================
+  caddy:
+    profiles: [production]
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - lyra-net
+      - postiz-network
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    # No depends_on: services are in different profiles (email/social/convert).
+    # Start Caddy after the target services are already running:
+    #   doppler run -- ./scripts/preflight-prod.sh
+    #   doppler run -- docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+    #     --profile all --profile production up -d caddy
+
+networks:
+  lyra-net:
+    driver: bridge
+  postiz-network:
+    driver: bridge
+  temporal-network:
+    driver: bridge
+    name: temporal-network
+
+volumes:
+  listmonk-db-data:
+  listmonk-uploads:
+  postiz-db-data:
+  postiz-redis-data:
+  postiz-config:
+  postiz-uploads:
+  temporal-postgres-data:
+  temporal-elasticsearch-data:
+  caddy-data:
+  caddy-config:
